@@ -156,14 +156,37 @@ int my_ioctl(struct inode *inode, struct file *filp, unsigned int cmd, unsigned 
     switch(cmd)
     {
     case LISTEN:
-	//
-	// handle 
-	//
-	break;
+    {
+        // in this case, we will asign the given port to the current process
+        pid_t pid = current->pid; // Get the current process ID
+        unsigned int minor_num = MINOR(inode->i_rdev);
+        if (minor_num >= MAX_CONNECTIONS) {
+            printk(KERN_ERR "Invalid minor number: %u\n", minor_num);
+            return -EINVAL; // Invalid argument
+        }
+        // here we should check if only this pid used or called the port before
+        if (ports[minor_num] == arg % 256) {
+            printk(KERN_ERR "Port already in use for minor number: %u\n", minor_num);
+            return -EADDRINUSE; // Device or resource busy
+        }
+        
+
+
+        dev_files[minor_num]->fd = filp->f_flags; // Store the file descriptor flags
+        dev_files[minor_num]->messages = kmalloc(QUEUE_SIZE * sizeof(char *), GFP_KERNEL);
+        if (!dev_files[minor_num]->messages) {
+            printk(KERN_ERR "Failed to allocate memory for messages\n");
+            return -ENOMEM; // Memory allocation failed
+        }
+        // Initialize messages array
+        for (int i = 0; i < QUEUE_SIZE; i++) {
+            dev_files[minor_num]->messages[i] = NULL; // Initialize each message pointer to NULL
+        }
+        printk(KERN_INFO "Port %d assigned to process %d\n", minor_num, pid);
+        return 0; // Success
+    }
     case CONNECT:
-	//
-	// handle 
-	//
+
 	break;
     default:
 	return -ENOTTY;
