@@ -27,14 +27,14 @@ MODULE_LICENSE("GPL");
 
 /* globals */
 int my_major = 0; /* will hold the major # of my device driver */
-int *ports; // Array to hold ports for each connection
-file_data_t *dev_files; // Pointer to file data structure
+file_data_t **dev_files; // Pointer to file data structure
 
 typedef struct{
     unsigned int id;//number of file [0,255] , this is an index for the driver
     int fd; // file descriptor - for kernel space
     //here we can save a pointer to a queue of messages written into the file...
     char ** messages; // Array of messages for each connection
+    int *ports;
 } file_data_t;
 
 
@@ -60,27 +60,18 @@ int init_module(void)
     //
     // do_init();
     //
-    //allocate memory for ports
-    ports = kmalloc(MAX_CONNECTIONS * sizeof(int), GFP_KERNEL);
-    if (!ports) {
-        printk(KERN_ERR "Failed to allocate memory for ports\n");
-        unregister_chrdev(my_major, MY_DEVICE);
-        return -ENOMEM; // Memory allocation failed
-    }
-    //we store the ports in an array
-    // Initialize all ports to -1 (indicating unused)
-    //if used, pid is the value in use
-    for(int i = 0; i < MAX_CONNECTIONS; i++) {
-        ports[i] = -1; // Initialize all ports to -1 (indicating unused)
-    }
 
-    dev_files = kmalloc(MAX_CONNECTIONS * sizeof(file_data_t), GFP_KERNEL);
+    dev_files = kmalloc(MAX_CONNECTIONS * sizeof(*file_data_t), GFP_KERNEL);
     if (!dev_files) {
         printk(KERN_ERR "Failed to allocate memory for file data structures\n");
         kfree(ports); // Free previously allocated ports
         unregister_chrdev(my_major, MY_DEVICE);
         return -ENOMEM; // Memory allocation failed
     }
+
+    // initialize all slots to NULL:
+    for (i = 0; i < MAX_CONNECTIONS; i++)
+    dev_files[i] = NULL;
 
 
     return 0;
@@ -96,9 +87,6 @@ void cleanup_module(void)
     //
     // do clean_up();
     //
-
-    free(ports); // Free the allocated memory for ports
-    ports = NULL; // Set pointer to NULL to avoid dangling pointer
     free(dev_files); // Free the allocated memory for file data structures
     return;
 }
@@ -130,6 +118,14 @@ int my_open(struct inode *inode, struct file *filp)
     }
 
     dev_files[minor_num]->id = minor_num;
+    dev_files[minor_num]->ports = kmalloc(QUEUE_SIZE * sizeof(int), GFP_KERNEL);
+    if (!dev_files[minor_num]->ports) {
+        printk(KERN_ERR "Failed to allocate memory for ports\n");
+        kfree(dev_files[minor_num]); // Free previously allocated file data structure
+        dev_files[minor_num] = NULL; // Set to NULL to indicate it's not in use
+        return -ENOMEM; // Memory allocation failed
+    }
+    dev_files[minor_num]->fd = filp->f_flags; // Store file descriptor flags
     
 
     return 0;
